@@ -22,6 +22,8 @@ find_package(catkin
     tf2_ros
     tf2_eigen
 )
+find_package(Boost REQUIRED COMPONENTS python)
+find_package(PythonLibs 2.7 REQUIRED) # sets ${PYTHON_INCLUDE_DIRS}
 
 catkin_python_setup()
 
@@ -51,6 +53,7 @@ include_directories(
     ${PCL_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIR}
     ${catkin_INCLUDE_DIRS}
+    ${PYTHON_INCLUDE_DIRS}
 )
 
 link_directories(${PCL_LIBRARY_DIRS})
@@ -109,5 +112,23 @@ target_link_libraries(
     ${Boost_LIBRARIES}
     ${OpenCV_INCLUDE_DIRS}
 )
+
+add_library(stereo_base_wrapper SHARED
+  src/stereo_base_wrapper.cpp
+  src/sub8_vision_lib/stereo_base.cpp
+)
+# change output directory, so python can find the module, and set prefix to ""
+# to omit the default "lib".
+set_target_properties(stereo_base_wrapper PROPERTIES
+  PREFIX ""
+  LIBRARY_OUTPUT_DIRECTORY ${CATKIN_DEVEL_PREFIX}/${CATKIN_PACKAGE_PYTHON_DESTINATION}
+)
+
+target_link_libraries(stereo_base_wrapper
+  ${catkin_LIBRARIES}
+  ${Boost_LIBRARIES}
+)
+
+
 
 add_subdirectory(test)

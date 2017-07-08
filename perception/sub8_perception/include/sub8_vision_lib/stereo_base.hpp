@@ -54,7 +54,8 @@ public:
   */
   std::unique_ptr<Eigen::Affine3d> get_3d_pose(std::vector<Eigen::Vector3d> feature_pts_3d, float z_vector_min = 0.5);
 
-protected:
+// protected:
+public:
   std::unique_ptr<ROSCameraStream_Vec3> left_cam_stream_;
   std::unique_ptr<ROSCameraStream_Vec3> right_cam_stream_;
 
