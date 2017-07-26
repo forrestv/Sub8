@@ -78,25 +78,47 @@ class StartGateFinder():
 
 	def _get_edges(self, image):
 		img = image
+		image = cv2.medianBlur(image, 5)
 		# image = cv2.blur(image, (5, 5))
-		image = cv2.medianBlur(image, 7)
-
 		# _, blur = cv2.threshold(blur,140,255,cv2.THRESH_TRUNC)
-		# cv2.imshow("blur", blur)
+		cv2.imshow("blur", image)
 		# cv2.imshow("img", self.last_lab)
 		# cv2.imshow("test", cv2.Canny(self.last_lab, 20, 20 * 3.0))
 		# cv2.imshow("blur", image)
-		# 
+
 		kernel = np.ones((5,5),np.uint8)
-		canny = cv2.Canny(image, 30, 30*3)
-		cv2.imshow("sijdis", canny)
-		# lines = cv2.HoughLinesP(canny, 1, np.pi/2, 2, minLineLength = 620, maxLineGap = 100)[0].tolist()
-
-
-		# cv2.imshow("lines", img)
+		canny = cv2.Canny(image, 60, 60*3)
 		closing = cv2.morphologyEx(canny, cv2.MORPH_CLOSE, kernel)
-		dilation = cv2.dilate(canny,kernel,iterations = 3)
+		dilation = cv2.dilate(canny,kernel,iterations = 4)
+		cv2.imshow("sijdis", dilation)
+		# lines = cv2.HoughLinesP(canny, 1, np.pi/2, 2, minLineLength = 620, maxLineGap = 100)[0].tolist()
+		lines_horizantal = cv2.HoughLinesP(dilation, rho=1, theta=np.pi/180, threshold=70, minLineLength=50, maxLineGap=80)
+		lines_vertical = cv2.HoughLinesP(dilation, 1, np.pi, threshold=150, minLineLength=70, maxLineGap=80)
+		try:
+			lines = np.append(lines_horizantal, lines_vertical, axis = 0)
+			img_line_mask = np.zeros(img.shape, dtype=np.uint8)
+			if lines is None:
+				return
+			for x in range(0, len(lines)):
+				for x1,y1,x2,y2 in lines[x]:
+					angle = np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi
+					if np.abs(angle) > 20 and np.abs(angle) < 70:
+						continue
 
+			 		cv2.line(img_line_mask,(x1,y1),(x2,y2),(255),2)
+			cv2.imshow("mask", img_line_mask)
+		except:
+			print "rip"
+		img_line_mask = cv2.dilate(img_line_mask, kernel, iterations = 2)
+		test = cv2.bitwise_and(image, img_line_mask)
+		cv2.imshow("test", test)
+		# if lines is None:
+		# 	return
+		# for x in range(0, len(lines)):
+		# 	for x1,y1,x2,y2 in lines[x]:
+		#    		cv2.line(self.last_bgr,(x1,y1),(x2,y2),(0,0,255),2)
+
+		
 
 		# cv2.imshow("dial", dilation)
 		conc_black = np.concatenate((canny, closing, dilation), axis=1)
@@ -154,15 +176,15 @@ class StartGateFinder():
 		_, contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 		for idx, c in enumerate(contours):
 			if(self._valid_contour(c)):
-				cv2.drawContours(img, contours, idx, (200, 0, 0), 3)
 				M = cv2.moments(c)
+				cv2.drawContours(self.last_bgr, contours, idx, (200, 0, 0), 3)
 				cX = int(M["m10"] / M["m00"])
 				cY = int(M["m01"] / M["m00"])
-				cv2.circle(img, (cX, cY), 3, (200, 0, 0), -1)
+				cv2.circle(self.last_bgr, (cX, cY), 3, (200, 0, 0), -1)
 				print("Found")
 				# cv2.drawContours(self.last_bgr,[box],0,(0,0,255),2)
 		
-		cv2.imshow("found", img)
+		cv2.imshow("found", self.last_bgr)
 		# self.vis = np.concatenate((image, img), axis=1)
 		# self.image_pub.publish(self.vis)
 		# cv2.imshow("debug", img)
