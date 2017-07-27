@@ -194,7 +194,7 @@ cv::Mat Sub8StartGateDetector::process_image(cv::Mat &image)
   // cv::medianBlur(dst, processed_image, blur_size_);
 
   cv::Mat canny;
-  cv::Canny(processed_image, canny, canny_low_, canny_low_ * canny_ratio_);
+  cv::Canny(processed_image, canny, 60, 60 * 3);
 
   cv::Mat closing;
   cv::morphologyEx(canny, closing, cv::MORPH_CLOSE, kernal);
@@ -202,24 +202,38 @@ cv::Mat Sub8StartGateDetector::process_image(cv::Mat &image)
   cv::Mat dilation;
   cv::dilate(closing, dilation, kernal, cv::Point(), 4);
 
-  std::vector<cv::Vec4i> lines_horizantal, lines_vertical;
-  cv::HoughLinesP(dilation, lines_horizantal, 1, CV_PI/180, 100, 200, 80);
-  cv::HoughLinesP(dilation, lines_vertical, 1, CV_PI, 100, 80, 80);
-  std::vector<cv::Vec4i> lines;
-  lines.reserve( lines_horizantal.size() + lines_vertical.size() );
-  lines.insert(lines.end(), lines_horizantal.begin(), lines_horizantal.end());
-  lines.insert(lines.end(), lines_vertical.begin(), lines_vertical.end());
+  std::vector<cv::Vec4i> lines_vertical;
+  cv::HoughLinesP(dilation, lines_vertical, 1, CV_PI, 150, 70, 80);
 
   cv::Mat img_line_mask = cv::Mat::zeros(image.size(), CV_8U);
-  for(size_t i = 0; i < lines.size(); i++)
+  for(size_t i = 0; i < lines_vertical.size(); i++)
   {
-    cv::Vec4i l = lines[i];
+    cv::Vec4i l = lines_vertical[i];
     double angle = atan2(l[0]-l[2], l[1] - l[3]) * 180 / CV_PI;
     if (abs(angle) > 20 && abs(angle) < 70) continue;
     cv::line(img_line_mask, cv::Point(l[0], l[1]), cv::Point(l[2], l[3]), cv::Scalar(255), 1, CV_AA);
   }
 
-  sensor_msgs::ImagePtr dbg_img_msg_canny = cv_bridge::CvImage(std_msgs::Header(), "mono8", img_line_mask).toImageMsg();
+  cv::Mat canny_mask;
+  cv::Canny(img_line_mask, canny_mask, 10, 10 * 3);
+  cv::Mat dilation_mask;
+  cv::dilate(canny_mask, dilation_mask, kernal, cv::Point(), 2);
+
+  std::vector<std::vector<cv::Point>> contour;
+  std::vector<cv::Vec4i> hierarchy;
+  cv::findContours(dilation_mask, contour, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE, cv::Point(-1, -1));
+
+  for (size_t i = 0; i < contour.size(); ++i)
+  {
+    std::vector<cv::Point> features;
+    auto epsilon = 0.1 * cv::arcLength(contour.at(i), true);
+    cv::approxPolyDP(contour.at(i), features, epsilon, true);
+    std::vector<std::vector<cv::Point>> contourz = {features};
+    cv::drawContours(debug_image_bgr_, contourz, -1, cv::Scalar(0, 255, 0), 2, 8);
+  }
+
+
+  sensor_msgs::ImagePtr dbg_img_msg_canny = cv_bridge::CvImage(std_msgs::Header(), "mono8", dilation_mask).toImageMsg();
   debug_image_pub_canny_.publish(dbg_img_msg_canny);
   sensor_msgs::ImagePtr dbg_img_msg_bgr = cv_bridge::CvImage(std_msgs::Header(), "bgr8", debug_image_bgr_).toImageMsg();
   debug_image_pub_bgr_.publish(dbg_img_msg_bgr);

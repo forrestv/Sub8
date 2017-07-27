@@ -92,10 +92,10 @@ class StartGateFinder():
 		dilation = cv2.dilate(canny,kernel,iterations = 4)
 		cv2.imshow("sijdis", dilation)
 		# lines = cv2.HoughLinesP(canny, 1, np.pi/2, 2, minLineLength = 620, maxLineGap = 100)[0].tolist()
-		lines_horizantal = cv2.HoughLinesP(dilation, rho=1, theta=np.pi/180, threshold=70, minLineLength=50, maxLineGap=80)
 		lines_vertical = cv2.HoughLinesP(dilation, 1, np.pi, threshold=150, minLineLength=70, maxLineGap=80)
+		verts = []
 		try:
-			lines = np.append(lines_horizantal, lines_vertical, axis = 0)
+			lines = lines_vertical
 			img_line_mask = np.zeros(img.shape, dtype=np.uint8)
 			if lines is None:
 				return
@@ -104,14 +104,35 @@ class StartGateFinder():
 					angle = np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi
 					if np.abs(angle) > 20 and np.abs(angle) < 70:
 						continue
-
+					print angle
 			 		cv2.line(img_line_mask,(x1,y1),(x2,y2),(255),2)
 			cv2.imshow("mask", img_line_mask)
 		except:
 			print "rip"
-		img_line_mask = cv2.dilate(img_line_mask, kernel, iterations = 2)
-		test = cv2.bitwise_and(image, img_line_mask)
-		cv2.imshow("test", test)
+		canny_mask = cv2.Canny(img_line_mask, 10, 10*3)
+		cv2.imshow("c_mask", canny_mask)
+		dialte_mask = cv2.dilate(canny_mask,kernel,iterations = 2)
+		_, contours_thresh, _ = cv2.findContours(dialte_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+		for idx, c in enumerate(contours_thresh):
+			epsilon = 0.1*cv2.arcLength(c,True)
+			approx = cv2.approxPolyDP(c,epsilon,True)
+			cv2.drawContours(self.last_bgr, [approx], -1, (0, 0, 200), 3)
+
+		# img_line_mask = cv2.dilate(img_line_mask, kernel, iterations = 6)
+		# test = cv2.bitwise_and(image, img_line_mask)
+		# (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(test)
+		# cv2.circle(self.last_bgr, maxLoc, 10, (255, 0, 0), 2)
+		# cv2.circle(test, maxLoc, 10, (255), 2)
+		
+
+		# thresh, heh = cv2.threshold(test, 110, 190, cv2.THRESH_BINARY)
+		# canny_thresh = cv2.Canny(heh, 10, 10 * 3)
+		# dilation_thresh = cv2.dilate(canny_thresh,kernel,iterations = 2)
+		# _, contours_thresh, _ = cv2.findContours(dilation_thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+
+		# cv2.imshow("test", dilation_thresh)
+
 		# if lines is None:
 		# 	return
 		# for x in range(0, len(lines)):
@@ -121,8 +142,8 @@ class StartGateFinder():
 		
 
 		# cv2.imshow("dial", dilation)
-		conc_black = np.concatenate((canny, closing, dilation), axis=1)
-		self.image_pub_black.publish(self.bridge.cv2_to_imgmsg(conc_black, "mono8"))
+		# conc_black = np.concatenate((canny, closing, dilation), axis=1)
+		# self.image_pub_black.publish(self.bridge.cv2_to_imgmsg(test, "mono8"))
 
 		return dilation
 
