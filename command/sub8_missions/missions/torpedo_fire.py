@@ -1,10 +1,14 @@
 from txros import util
 import rospy
 from geometry_msgs.msg import Point
+from sensor_msgs.msg import CameraInfo
 from mil_msgs.msg import RangeStamped
 import tf
 from twisted.internet import defer
 import sys
+from sub8 import SonarObjects
+from image_geometry import PinholeCameraModel
+import numpy as np
 
 # Current depth constant
 CURRENT_DEPTH = 0
@@ -38,14 +42,14 @@ def update_point_callback(msg, sub):
         print "up left"
         yield sub.move.up(.05).go(blind=true)
         yield sub.move.left(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
     elif m.z == -5:
         print "up"
         yield sub.move.up(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
@@ -53,21 +57,21 @@ def update_point_callback(msg, sub):
         print "up right"
         yield sub.move.up(.05).go(blind=true)
         yield sub.move.right(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
     elif m.z == -1:
         # print "left"
         yield sub.move.left(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
     elif m.z == 1:
         print "right"
         yield sub.move.right(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
@@ -76,7 +80,7 @@ def update_point_callback(msg, sub):
         if (check_depth()):
             yield sub.move.down(.05).go(blind=true)
         yield sub.move.left(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
@@ -84,7 +88,7 @@ def update_point_callback(msg, sub):
         print "down"
         if (check_depth()):
             yield sub.move.down(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
@@ -93,7 +97,7 @@ def update_point_callback(msg, sub):
         if (check_depth()):
             yield sub.move.down(.05).go(blind=true)
         yield sub.move.right(.05).go(blind=true)
-        if(TARGET_LOCK > 0):
+        if (TARGET_LOCK > 0):
             print "TARGET LOST."
             TARGET_LOCK = 0
 
@@ -104,7 +108,30 @@ def update_point_callback(msg, sub):
         else:
             TARGET_LOCK = True
             print "TARGET AQUIRED, FIRING MISSILES."
-        # sys.exit(0)
+            cam_info_sub = yield sub.nh.subscribe(
+                '/camera/front/right/camera_info', CameraInfo)
+
+            print('Getting cam info')
+            cam_info = yield cam_info_sub.get_next_message()
+            model = PinholeCameraModel()
+            model.fromCameraInfo(cam_info)
+            r, p = yield get_transform(sub, model, np.array([m.x, m.y]))
+            so = SonarObjects(
+                sub, [sub.move.pitch_down_deg(15),
+                      sub.move.pitch_up_deg(15)])
+            objs = yield so.start_until_found_in_cone(
+                p,
+                speed=0.2,
+                object_count=1,
+                ray=r,
+                angle_tol=5,
+                distance_tol=5)
+            ob = objs.objects[0].pose.position
+            where = np.array(ob.x, ob.y, ob.z)
+            print('Go to: {}'.format(where))
+            yield sub.move.look_at(where).go(bline=True)
+            yield sub.move.set_position.go(blind=True, speed=0.2).go()
+            print('Aligned')
         # continue
         # fire the missiles!
         # We good bois.
@@ -140,10 +167,11 @@ def run(sub):
 
     # Subscriber for my interesting logic system/perception.
 
-    points_sub = yield sub.nh.subscribe(
-        "/torp_vision/points", Point)
+    points_sub = yield sub.nh.subscribe("/torp_vision/points", Point)
 
-    while TARGET_LOCK == False:
+    while TARGET_LOCK is False:
+        print "Attempting to get Range"
+        range_msg = range_sub.get_next_message()
         print "depth_callback"
         depth_callback(sub)
         print "Attempting to get Points"
@@ -168,3 +196,15 @@ def run(sub):
     m.z = -1 --> Only Y is off, too far right.
     m.z = 1 --> Only Y is off, too far left.
     '''
+
+
+@util.cancellableInlineCallbacks
+def get_transform(sub, model, point):
+    print('Projecting to 3d ray')
+    ray = np.array(model.projectPixelTo3dRay(point))
+    print('Transform')
+    transform = yield sub._tf_listener.get_transform('/map', 'front_right_cam')
+    ray = transform._q_mat.dot(ray)
+    ray = ray / np.linalg.norm(ray)
+    print('ray: {}, origin: {}'.format(ray, transform._p))
+    defer.returnValue((ray, transform._p))
